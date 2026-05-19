@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: CC-BY-NC-4.0
+
+import argparse
+import logging
+import os
+import sys
+from collections import OrderedDict
+from copy import deepcopy
+from glob import glob
+from pathlib import Path
+from time import time
+
+import numpy as np
+import torch
+import torch.distributed as dist
+from PIL import Image
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+from torchvision import transforms
+from torchvision.datasets import ImageFolder
+
+REPO_SRC = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(REPO_SRC))  # noqa: E402
+
+from diffusers import (
+    DIT_MODEL_PRESETS,
+    compute_dit_training_loss,
+    create_training_scheduler,
+    get_transformer_config,
+)
+from diffusers._hf import get_hf_attr
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
+
+@torch.no_grad()
+def update_ema(ema_model, model, decay=0.9999):
+    ema_params = OrderedDict(ema_model.named_parameters())
+    model_params = OrderedDict(model.named_parameters())
+    for name, param in model_params.items():
+        ema_params[name].mul_(decay).add_(param.data, alpha=1 - decay)
+
+
+def requires_grad(model, flag=True):
+    for param in model.parameters():
+        param.requires_grad = flag
+
+
+def cleanup():
+    dist.destroy_process_group()
+
+
+def create_logger(logging_dir):
+    if dist.get_rank() == 0:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[\033[34m%(asctime)s\033[0m] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=[logging.StreamHandler(), logging.FileHandler(f"{logging_dir}/log.txt")],
+        )
+        return logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
+    logger.addHandler(logging.NullHandler())
+    return logger
+
+
+def center_crop_arr(pil_image, image_size):
+    while min(*pil_image.size) >= 2 * image_size:
+        pil_image = pil_image.resize(tuple(x // 2 for x in pil_image.size), resample=Image.BOX)
+    scale = image_size / min(*pil_image.size)
+    pil_image = pil_image.resize(tuple(round(x * scale) for x in pil_image.size), resample=Image.BICUBIC)
+    arr = np.array(pil_image)
+    crop_y = (arr.shape[0] - image_size) // 2
+    crop_x = (arr.shape[1] - image_size) // 2
+    return Image.fromarray(arr[crop_y : crop_y + image_size, crop_x : crop_x + image_size])
+
+
+def main(args):
+    assert torch.cuda.is_available(), "Training currently requires at least one GPU."
+    DiTTransformer2DModel = get_hf_attr("diffusers.models.transformers.dit_transformer_2d.DiTTransformer2DModel")
+    AutoencoderKL = get_hf_attr("diffusers.models.autoencoder_kl.AutoencoderKL")
+
+    dist.init_process_group("nccl")
+    assert args.global_batch_size % dist.get_world_size() == 0
+    rank = dist.get_rank()
+    device = rank % torch.cuda.device_count()
+    seed = args.global_seed * dist.get_world_size() + rank
+    torch.manual_seed(seed)
+    torch.cuda.set_device(device)
+
+    if rank == 0:
+        os.makedirs(args.results_dir, exist_ok=True)
+        experiment_index = len(glob(f"{args.results_dir}/*"))
+        model_string_name = args.model.replace("/", "-")
+        experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"
+        checkpoint_dir = f"{experiment_dir}/checkpoints"
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        logger = create_logger(experiment_dir)
+        logger.info(f"Experiment directory created at {experiment_dir}")
+    else:
+        logger = create_logger(None)
+
+    model = DiTTransformer2DModel(**get_transformer_config(args.model, args.image_size, args.num_classes))
+    ema = deepcopy(model).to(device)
+    requires_grad(ema, False)
+    model = DDP(model.to(device), device_ids=[rank])
+    scheduler = create_training_scheduler()
+    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
+    logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    transform = transforms.Compose(
+        [
+            transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True),
+        ]
+    )
+    dataset = ImageFolder(args.data_path, transform=transform)
+    sampler = DistributedSampler(dataset, num_replicas=dist.get_world_size(), rank=rank, shuffle=True, seed=args.global_seed)
+    loader = DataLoader(
+        dataset,
+        batch_size=int(args.global_batch_size // dist.get_world_size()),
+        shuffle=False,
+        sampler=sampler,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        drop_last=True,
+    )
+    logger.info(f"Dataset contains {len(dataset):,} images ({args.data_path})")
+
+    update_ema(ema, model.module, decay=0)
+    model.train()
+    ema.eval()
+
+    train_steps = 0
+    log_steps = 0
+    running_loss = 0
+    start_time = time()
+    logger.info(f"Training for {args.epochs} epochs...")
+
+    for epoch in range(args.epochs):
+        sampler.set_epoch(epoch)
+        logger.info(f"Beginning epoch {epoch}...")
+        for x, y in loader:
+            x = x.to(device)
+            y = y.to(device)
+            with torch.no_grad():
+                latents = vae.encode(x).latent_dist.sample().mul_(vae.config.scaling_factor)
+            loss = compute_dit_training_loss(model.module, scheduler, latents, y)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            update_ema(ema, model.module)
+
+            running_loss += loss.item()
+            log_steps += 1
+            train_steps += 1
+            if train_steps % args.log_every == 0:
+                torch.cuda.synchronize()
+                end_time = time()
+                steps_per_sec = log_steps / (end_time - start_time)
+                avg_loss = torch.tensor(running_loss / log_steps, device=device)
+                dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
+                avg_loss = avg_loss.item() / dist.get_world_size()
+                logger.info(f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}")
+                running_loss = 0
+                log_steps = 0
+                start_time = time()
+
+            if train_steps % args.ckpt_every == 0 and train_steps > 0:
+                if rank == 0:
+                    checkpoint = {
+                        "model": model.module.state_dict(),
+                        "ema": ema.state_dict(),
+                        "opt": opt.state_dict(),
+                        "args": args,
+                    }
+                    torch.save(checkpoint, f"{checkpoint_dir}/{train_steps:07d}.pt")
+                    logger.info(f"Saved checkpoint to {checkpoint_dir}/{train_steps:07d}.pt")
+                dist.barrier()
+
+    model.eval()
+    logger.info("Done!")
+    cleanup()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-path", type=str, required=True)
+    parser.add_argument("--results-dir", type=str, default="results")
+    parser.add_argument("--model", type=str, choices=list(DIT_MODEL_PRESETS.keys()), default="DiT-XL/2")
+    parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
+    parser.add_argument("--num-classes", type=int, default=1000)
+    parser.add_argument("--epochs", type=int, default=1400)
+    parser.add_argument("--global-batch-size", type=int, default=256)
+    parser.add_argument("--global-seed", type=int, default=0)
+    parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
+    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--log-every", type=int, default=100)
+    parser.add_argument("--ckpt-every", type=int, default=50_000)
+    main(parser.parse_args())
