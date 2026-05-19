@@ -3,7 +3,7 @@ from typing import Optional
 
 import torch
 
-from .._hf import get_hf_diffusers
+from .._hf import get_hf_attr, get_hf_diffusers
 from .config import DIT_MODEL_PRESETS, get_transformer_config
 from .conversion import convert_original_state_dict
 
@@ -25,11 +25,10 @@ def load_dit_pipeline(
     diffusers_dir: Optional[str] = None,
     torch_dtype: torch.dtype = torch.float32,
 ):
-    hf = get_hf_diffusers()
-    DiTPipeline = hf.DiTPipeline
-    DiTTransformer2DModel = hf.DiTTransformer2DModel
-    DDIMScheduler = hf.DDIMScheduler
-    AutoencoderKL = hf.AutoencoderKL
+    DiTPipeline = get_hf_attr("diffusers.pipelines.dit.pipeline_dit.DiTPipeline")
+    DiTTransformer2DModel = get_hf_attr("diffusers.models.transformers.dit_transformer_2d.DiTTransformer2DModel")
+    DDIMScheduler = get_hf_attr("diffusers.schedulers.DDIMScheduler")
+    AutoencoderKL = get_hf_attr("diffusers.models.autoencoder_kl.AutoencoderKL")
 
     vae_id = f"stabilityai/sd-vae-ft-{vae}"
 
@@ -62,4 +61,7 @@ def load_dit_pipeline(
         clip_sample=False,
     )
     vae_model = AutoencoderKL.from_pretrained(vae_id)
+ 
+    # Ensure Hub helpers resolve to the PyPI package when saving/loading.
+    get_hf_diffusers()
     return DiTPipeline(transformer=transformer, vae=vae_model, scheduler=scheduler)

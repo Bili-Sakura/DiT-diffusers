@@ -16,8 +16,8 @@ from tqdm import tqdm
 REPO_SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(REPO_SRC))  # noqa: E402
 
-from dit_diffusers import load_dit_pipeline
-from dit_diffusers.utils.sampling import sample_dit_latents
+from diffusers import load_dit_pipeline
+from diffusers.utils.sampling import sample_dit_latents
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True

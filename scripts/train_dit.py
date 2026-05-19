@@ -24,13 +24,13 @@ from torchvision.datasets import ImageFolder
 REPO_SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(REPO_SRC))  # noqa: E402
 
-from dit_diffusers import (
+from diffusers import (
     DIT_MODEL_PRESETS,
     compute_dit_training_loss,
     create_training_scheduler,
     get_transformer_config,
 )
-from dit_diffusers._hf import get_hf_diffusers
+from diffusers._hf import get_hf_attr
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -80,9 +80,8 @@ def center_crop_arr(pil_image, image_size):
 
 def main(args):
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
-    hf = get_hf_diffusers()
-    DiTTransformer2DModel = hf.DiTTransformer2DModel
-    AutoencoderKL = hf.AutoencoderKL
+    DiTTransformer2DModel = get_hf_attr("diffusers.models.transformers.dit_transformer_2d.DiTTransformer2DModel")
+    AutoencoderKL = get_hf_attr("diffusers.models.autoencoder_kl.AutoencoderKL")
 
     dist.init_process_group("nccl")
     assert args.global_batch_size % dist.get_world_size() == 0

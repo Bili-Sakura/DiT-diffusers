@@ -13,8 +13,8 @@ import torch
 REPO_SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(REPO_SRC))  # noqa: E402
 
-from dit_diffusers._hf import get_hf_diffusers
-from dit_diffusers.utils import DIT_MODEL_PRESETS, convert_original_state_dict, get_transformer_config
+from diffusers._hf import get_hf_attr
+from diffusers.utils import DIT_MODEL_PRESETS, convert_original_state_dict, get_transformer_config
 
 try:
     from safetensors.torch import save_file as safe_save_file
@@ -81,11 +81,10 @@ def parse_args():
 
 
 def main():
-    hf = get_hf_diffusers()
-    DiTPipeline = hf.DiTPipeline
-    DiTTransformer2DModel = hf.DiTTransformer2DModel
-    DDIMScheduler = hf.DDIMScheduler
-    AutoencoderKL = hf.AutoencoderKL
+    DiTPipeline = get_hf_attr("diffusers.pipelines.dit.pipeline_dit.DiTPipeline")
+    DiTTransformer2DModel = get_hf_attr("diffusers.models.transformers.dit_transformer_2d.DiTTransformer2DModel")
+    DDIMScheduler = get_hf_attr("diffusers.schedulers.DDIMScheduler")
+    AutoencoderKL = get_hf_attr("diffusers.models.autoencoder_kl.AutoencoderKL")
 
     args = parse_args()
     output_dir = Path(args.output)

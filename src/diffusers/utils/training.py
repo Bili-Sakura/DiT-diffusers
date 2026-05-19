@@ -1,11 +1,11 @@
 import torch
 import torch.nn.functional as F
 
-from .._hf import get_hf_diffusers
+from .._hf import get_hf_attr
 
 
 def create_training_scheduler(num_train_timesteps: int = 1000):
-    DDPMScheduler = get_hf_diffusers().DDPMScheduler
+    DDPMScheduler = get_hf_attr("diffusers.schedulers.DDPMScheduler")
     return DDPMScheduler(
         num_train_timesteps=num_train_timesteps,
         beta_schedule="linear",

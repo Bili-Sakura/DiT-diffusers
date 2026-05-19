@@ -2,18 +2,18 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from dit_diffusers import (
+from diffusers import (
     DIT_MODEL_PRESETS,
     compute_dit_training_loss,
     convert_original_state_dict,
     create_training_scheduler,
     get_transformer_config,
 )
-from dit_diffusers._hf import get_hf_diffusers
+from diffusers._hf import get_hf_attr
 
 
 def test_transformer_forward():
-    DiTTransformer2DModel = get_hf_diffusers().DiTTransformer2DModel
+    DiTTransformer2DModel = get_hf_attr("diffusers.models.transformers.dit_transformer_2d.DiTTransformer2DModel")
     model = DiTTransformer2DModel(
         sample_size=4,
         num_layers=2,
@@ -32,7 +32,7 @@ def test_transformer_forward():
 
 
 def test_training_loss():
-    DiTTransformer2DModel = get_hf_diffusers().DiTTransformer2DModel
+    DiTTransformer2DModel = get_hf_attr("diffusers.models.transformers.dit_transformer_2d.DiTTransformer2DModel")
     model = DiTTransformer2DModel(
         sample_size=4,
         num_layers=2,
@@ -81,7 +81,7 @@ def test_convert_state_dict_shapes():
         state[f"blocks.{idx}.mlp.fc2.bias"] = torch.randn(hidden)
 
     converted = convert_original_state_dict(state, "DiT-S/2")
-    DiTTransformer2DModel = get_hf_diffusers().DiTTransformer2DModel
+    DiTTransformer2DModel = get_hf_attr("diffusers.models.transformers.dit_transformer_2d.DiTTransformer2DModel")
     model = DiTTransformer2DModel(**get_transformer_config("DiT-S/2", image_size=32))
     missing, unexpected = model.load_state_dict(converted, strict=False)
     assert not missing

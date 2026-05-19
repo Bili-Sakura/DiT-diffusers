@@ -1,5 +1,3 @@
-from .models.transformers import DiTTransformer2DModel
-from .pipelines.dit import DiTPipeline
 from .utils import (
     DIT_MODEL_PRESETS,
     compute_dit_training_loss,
@@ -19,3 +17,15 @@ __all__ = [
     "get_transformer_config",
     "load_dit_pipeline",
 ]
+
+
+def __getattr__(name: str):
+    if name == "DiTTransformer2DModel":
+        from .models.transformers.transformer_dit import DiTTransformer2DModel
+
+        return DiTTransformer2DModel
+    if name == "DiTPipeline":
+        from .pipelines.dit.pipeline_dit import DiTPipeline
+
+        return DiTPipeline
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

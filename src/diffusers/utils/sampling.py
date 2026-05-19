@@ -2,11 +2,11 @@ from typing import Optional
 
 import torch
 
-from .._hf import get_hf_diffusers
+from .._hf import get_hf_attr
 
 
 def _randn_tensor(*args, **kwargs):
-    return get_hf_diffusers().utils.torch_utils.randn_tensor(*args, **kwargs)
+    return get_hf_attr("diffusers.utils.torch_utils.randn_tensor")(*args, **kwargs)
 
 
 @torch.no_grad()

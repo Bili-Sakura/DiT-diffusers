@@ -12,7 +12,7 @@ from torchvision.utils import save_image
 REPO_SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(REPO_SRC))  # noqa: E402
 
-from dit_diffusers import load_dit_pipeline
+from diffusers import load_dit_pipeline
 
 
 def parse_args():

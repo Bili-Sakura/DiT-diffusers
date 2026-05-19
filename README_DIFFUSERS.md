@@ -3,10 +3,10 @@ DiT Diffusers integration
 
 This repository mirrors the [NiT-diffusers](https://github.com/Bili-Sakura/NiT-diffusers) layout for upstream Hugging Face Diffusers integration. Legacy `models.py`, `diffusion/`, and root training/sampling scripts have been removed.
 
-Layout (NiT-style, installable as `dit_diffusers`):
+Layout (NiT-style, installable as `diffusers`):
 
 ```text
-src/dit_diffusers/
+src/diffusers/
   models/transformers/transformer_dit.py   # DiTTransformer2DModel
   pipelines/dit/pipeline_dit.py            # DiTPipeline
   schedulers/                              # DDIMScheduler, DDPMScheduler
