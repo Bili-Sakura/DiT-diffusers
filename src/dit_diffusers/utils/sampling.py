@@ -1,7 +1,12 @@
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
-from diffusers.utils.torch_utils import randn_tensor
+
+from .._hf import get_hf_diffusers
+
+
+def _randn_tensor(*args, **kwargs):
+    return get_hf_diffusers().utils.torch_utils.randn_tensor(*args, **kwargs)
 
 
 @torch.no_grad()
@@ -18,7 +23,7 @@ def sample_dit_latents(
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     batch_size = class_labels.shape[0]
-    latents = randn_tensor(
+    latents = _randn_tensor(
         (batch_size, in_channels, latent_size, latent_size),
         generator=generator,
         device=device,
@@ -26,9 +31,7 @@ def sample_dit_latents(
     )
     latent_model_input = torch.cat([latents, latents], dim=0) if guidance_scale > 1.0 else latents
     null_labels = torch.full((batch_size,), transformer.config.num_embeds_ada_norm, device=device, dtype=torch.long)
-    class_labels_input = (
-        torch.cat([class_labels, null_labels], dim=0) if guidance_scale > 1.0 else class_labels
-    )
+    class_labels_input = torch.cat([class_labels, null_labels], dim=0) if guidance_scale > 1.0 else class_labels
 
     scheduler.set_timesteps(num_inference_steps, device=device)
     for timestep in scheduler.timesteps:

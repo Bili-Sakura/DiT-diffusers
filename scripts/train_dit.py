@@ -1,12 +1,6 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
+#!/usr/bin/env python3
+# SPDX-License-Identifier: CC-BY-NC-4.0
 
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
-"""
-A minimal training script for DiT using PyTorch DDP and Diffusers-native components.
-"""
 import argparse
 import logging
 import os
@@ -20,7 +14,6 @@ from time import time
 import numpy as np
 import torch
 import torch.distributed as dist
-from diffusers import AutoencoderKL, DiTTransformer2DModel
 from PIL import Image
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -28,9 +21,16 @@ from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+REPO_SRC = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(REPO_SRC))  # noqa: E402
 
-from dit_diffusers import DIT_MODEL_PRESETS, compute_dit_training_loss, create_training_scheduler, get_transformer_config
+from dit_diffusers import (
+    DIT_MODEL_PRESETS,
+    compute_dit_training_loss,
+    create_training_scheduler,
+    get_transformer_config,
+)
+from dit_diffusers._hf import get_hf_diffusers
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -70,10 +70,8 @@ def create_logger(logging_dir):
 def center_crop_arr(pil_image, image_size):
     while min(*pil_image.size) >= 2 * image_size:
         pil_image = pil_image.resize(tuple(x // 2 for x in pil_image.size), resample=Image.BOX)
-
     scale = image_size / min(*pil_image.size)
     pil_image = pil_image.resize(tuple(round(x * scale) for x in pil_image.size), resample=Image.BICUBIC)
-
     arr = np.array(pil_image)
     crop_y = (arr.shape[0] - image_size) // 2
     crop_x = (arr.shape[1] - image_size) // 2
@@ -82,9 +80,12 @@ def center_crop_arr(pil_image, image_size):
 
 def main(args):
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
+    hf = get_hf_diffusers()
+    DiTTransformer2DModel = hf.DiTTransformer2DModel
+    AutoencoderKL = hf.AutoencoderKL
 
     dist.init_process_group("nccl")
-    assert args.global_batch_size % dist.get_world_size() == 0, "Batch size must be divisible by world size."
+    assert args.global_batch_size % dist.get_world_size() == 0
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
     seed = args.global_seed * dist.get_world_size() + rank
@@ -103,7 +104,6 @@ def main(args):
     else:
         logger = create_logger(None)
 
-    assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
     model = DiTTransformer2DModel(**get_transformer_config(args.model, args.image_size, args.num_classes))
     ema = deepcopy(model).to(device)
     requires_grad(ema, False)
@@ -113,7 +113,6 @@ def main(args):
     logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
-
     transform = transforms.Compose(
         [
             transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
@@ -123,13 +122,7 @@ def main(args):
         ]
     )
     dataset = ImageFolder(args.data_path, transform=transform)
-    sampler = DistributedSampler(
-        dataset,
-        num_replicas=dist.get_world_size(),
-        rank=rank,
-        shuffle=True,
-        seed=args.global_seed,
-    )
+    sampler = DistributedSampler(dataset, num_replicas=dist.get_world_size(), rank=rank, shuffle=True, seed=args.global_seed)
     loader = DataLoader(
         dataset,
         batch_size=int(args.global_batch_size // dist.get_world_size()),
@@ -149,8 +142,8 @@ def main(args):
     log_steps = 0
     running_loss = 0
     start_time = time()
-
     logger.info(f"Training for {args.epochs} epochs...")
+
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
@@ -188,9 +181,8 @@ def main(args):
                         "opt": opt.state_dict(),
                         "args": args,
                     }
-                    checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
-                    torch.save(checkpoint, checkpoint_path)
-                    logger.info(f"Saved checkpoint to {checkpoint_path}")
+                    torch.save(checkpoint, f"{checkpoint_dir}/{train_steps:07d}.pt")
+                    logger.info(f"Saved checkpoint to {checkpoint_dir}/{train_steps:07d}.pt")
                 dist.barrier()
 
     model.eval()
@@ -212,5 +204,4 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
-    args = parser.parse_args()
-    main(args)
+    main(parser.parse_args())

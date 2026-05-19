@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (c) Meta Platforms, Inc. and affiliates.
 # SPDX-License-Identifier: CC-BY-NC-4.0
 
 import argparse
@@ -10,8 +9,8 @@ import torch
 from torchvision.transforms.functional import pil_to_tensor
 from torchvision.utils import save_image
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
+REPO_SRC = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(REPO_SRC))  # noqa: E402
 
 from dit_diffusers import load_dit_pipeline
 

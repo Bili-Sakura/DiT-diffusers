@@ -2,13 +2,18 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from dit_diffusers.config import DIT_MODEL_PRESETS, get_transformer_config
-from dit_diffusers.conversion import convert_original_state_dict
-from dit_diffusers.training import compute_dit_training_loss, create_training_scheduler
-from diffusers import DiTTransformer2DModel
+from dit_diffusers import (
+    DIT_MODEL_PRESETS,
+    compute_dit_training_loss,
+    convert_original_state_dict,
+    create_training_scheduler,
+    get_transformer_config,
+)
+from dit_diffusers._hf import get_hf_diffusers
 
 
 def test_transformer_forward():
+    DiTTransformer2DModel = get_hf_diffusers().DiTTransformer2DModel
     model = DiTTransformer2DModel(
         sample_size=4,
         num_layers=2,
@@ -27,6 +32,7 @@ def test_transformer_forward():
 
 
 def test_training_loss():
+    DiTTransformer2DModel = get_hf_diffusers().DiTTransformer2DModel
     model = DiTTransformer2DModel(
         sample_size=4,
         num_layers=2,
@@ -75,8 +81,8 @@ def test_convert_state_dict_shapes():
         state[f"blocks.{idx}.mlp.fc2.bias"] = torch.randn(hidden)
 
     converted = convert_original_state_dict(state, "DiT-S/2")
-    config = get_transformer_config("DiT-S/2", image_size=32)
-    model = DiTTransformer2DModel(**config)
+    DiTTransformer2DModel = get_hf_diffusers().DiTTransformer2DModel
+    model = DiTTransformer2DModel(**get_transformer_config("DiT-S/2", image_size=32))
     missing, unexpected = model.load_state_dict(converted, strict=False)
     assert not missing
     assert not unexpected

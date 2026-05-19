@@ -1,9 +1,11 @@
 import torch
 import torch.nn.functional as F
-from diffusers import DDPMScheduler
+
+from .._hf import get_hf_diffusers
 
 
-def create_training_scheduler(num_train_timesteps: int = 1000) -> DDPMScheduler:
+def create_training_scheduler(num_train_timesteps: int = 1000):
+    DDPMScheduler = get_hf_diffusers().DDPMScheduler
     return DDPMScheduler(
         num_train_timesteps=num_train_timesteps,
         beta_schedule="linear",
@@ -14,7 +16,7 @@ def create_training_scheduler(num_train_timesteps: int = 1000) -> DDPMScheduler:
 
 def compute_dit_training_loss(
     model,
-    scheduler: DDPMScheduler,
+    scheduler,
     latents: torch.Tensor,
     class_labels: torch.Tensor,
     noise: torch.Tensor | None = None,

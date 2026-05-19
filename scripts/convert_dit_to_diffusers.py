@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (c) Meta Platforms, Inc. and affiliates.
 # SPDX-License-Identifier: CC-BY-NC-4.0
 
 import argparse
@@ -11,18 +10,16 @@ from typing import Any, Dict
 
 import torch
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
+REPO_SRC = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(REPO_SRC))  # noqa: E402
 
-from dit_diffusers.config import DIT_MODEL_PRESETS, get_transformer_config
-from dit_diffusers.conversion import convert_original_state_dict
+from dit_diffusers._hf import get_hf_diffusers
+from dit_diffusers.utils import DIT_MODEL_PRESETS, convert_original_state_dict, get_transformer_config
 
 try:
     from safetensors.torch import save_file as safe_save_file
 except Exception:  # pragma: no cover
     safe_save_file = None
-
-from diffusers import AutoencoderKL, DDIMScheduler, DiTPipeline, DiTTransformer2DModel
 
 
 def _load_state_dict(checkpoint_path: str) -> Dict[str, torch.Tensor]:
@@ -84,6 +81,12 @@ def parse_args():
 
 
 def main():
+    hf = get_hf_diffusers()
+    DiTPipeline = hf.DiTPipeline
+    DiTTransformer2DModel = hf.DiTTransformer2DModel
+    DDIMScheduler = hf.DDIMScheduler
+    AutoencoderKL = hf.AutoencoderKL
+
     args = parse_args()
     output_dir = Path(args.output)
     transformer_dir = output_dir / "transformer"
