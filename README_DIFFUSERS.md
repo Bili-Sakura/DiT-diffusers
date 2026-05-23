@@ -1,14 +1,14 @@
-DiT Diffusers integration
-=========================
+DiT Diffusers integration (custom pipeline)
+===========================================
 
-This repository mirrors the [NiT-diffusers](https://github.com/Bili-Sakura/NiT-diffusers) layout for upstream Hugging Face Diffusers integration. Legacy `models.py`, `diffusion/`, and root training/sampling scripts have been removed.
+This repository mirrors the [NiT-diffusers](https://github.com/Bili-Sakura/NiT-diffusers) layout for a project-owned custom `DiTPipeline`. It does not proxy to Diffusers built-in `DiTPipeline`.
 
 Layout (NiT-style, installable as `diffusers`):
 
 ```text
 src/diffusers/
   models/transformers/transformer_dit.py   # DiTTransformer2DModel
-  pipelines/dit/pipeline_dit.py            # DiTPipeline
+  pipelines/dit/pipeline_dit.py            # custom DiTPipeline implementation
   schedulers/                              # DDIMScheduler, DDPMScheduler
   utils/                                   # conversion, training, loading, sampling
 scripts/
@@ -36,11 +36,27 @@ python scripts/convert_dit_to_diffusers.py \
   --check-load
 ```
 
-Sample
-------
+Sample (custom pipeline)
+------------------------
 
 ```bash
 python scripts/sample_dit.py --class-label 207 --image-size 256
+```
+
+Model-repo loading pattern:
+
+```python
+from pathlib import Path
+import torch
+from diffusers import DiffusionPipeline
+
+model_dir = Path("models/BiliSakura/DiT-diffusers/DiT-XL-2-512")
+pipe = DiffusionPipeline.from_pretrained(
+    str(model_dir),
+    local_files_only=True,
+    custom_pipeline=str(model_dir / "pipeline.py"),
+    torch_dtype=torch.float16,
+)
 ```
 
 Train / FID

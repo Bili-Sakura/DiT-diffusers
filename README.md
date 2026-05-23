@@ -1,10 +1,10 @@
-## Scalable Diffusion Models with Transformers (DiT)<br><sub>Diffusers-native implementation</sub>
+## Scalable Diffusion Models with Transformers (DiT)<br><sub>Custom Diffusers pipeline implementation</sub>
 
 ### [Paper](http://arxiv.org/abs/2212.09748) | [Project Page](https://www.wpeebles.com/DiT) | [Diffusers docs](https://huggingface.co/docs/diffusers/api/pipelines/dit)
 
 ![DiT samples](visuals/sample_grid_0.png)
 
-This repository provides class-conditional DiT training, sampling, and checkpoint conversion using native [Hugging Face Diffusers](https://github.com/huggingface/diffusers) APIs. The layout follows [NiT-diffusers](https://github.com/Bili-Sakura/NiT-diffusers).
+This repository provides class-conditional DiT training, sampling, and checkpoint conversion using a project-owned custom `DiTPipeline` implementation on top of [Hugging Face Diffusers](https://github.com/huggingface/diffusers) components. The layout follows [NiT-diffusers](https://github.com/Bili-Sakura/NiT-diffusers).
 
 > [**Scalable Diffusion Models with Transformers**](https://www.wpeebles.com/DiT)<br>
 > [William Peebles](https://www.wpeebles.com), [Saining Xie](https://www.sainingxie.com)
@@ -21,13 +21,31 @@ See [`README_DIFFUSERS.md`](README_DIFFUSERS.md) for full API and conversion det
 
 ## Sampling
 
-Pre-trained DiT-XL/2 weights load automatically from the Hub (`facebook/DiT-XL-2-256` / `512`):
+Pre-trained DiT-XL/2 weights can be loaded from custom checkpoint folders (`BiliSakura/DiT-diffusers/...`) with `custom_pipeline`:
+
+```python
+from pathlib import Path
+import torch
+from diffusers import DiffusionPipeline
+
+model_dir = Path("models/BiliSakura/DiT-diffusers/DiT-XL-2-512")
+pipe = DiffusionPipeline.from_pretrained(
+    str(model_dir),
+    local_files_only=True,
+    custom_pipeline=str(model_dir / "pipeline.py"),
+    torch_dtype=torch.float16,
+).to("cuda")
+
+images = pipe(class_labels=[207], num_inference_steps=250, guidance_scale=4.0).images
+```
+
+CLI sampling is still available:
 
 ```bash
 python scripts/sample_dit.py --class-label 207 --image-size 256 --cfg-scale 4.0
 ```
 
-Legacy `.pt` checkpoints:
+Legacy `.pt` checkpoints can still be converted:
 
 ```bash
 python scripts/convert_dit_to_diffusers.py \
